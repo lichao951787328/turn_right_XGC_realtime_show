@@ -1,0 +1,5 @@
+<launch>
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
+  <node name="turn_right_walk" pkg="turn_right" type="aim_walk_ART" output="screen" />
+  <!-- <node name="rviz_turn_right_walk" pkg="rviz" type="rviz" args="-d $(find turn_right)/config/show.rviz"  /> -->
+</launch>
