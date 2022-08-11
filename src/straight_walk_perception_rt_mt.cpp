@@ -89,10 +89,10 @@ void initial_pose()
 {
     float BaseVisionZ = +1.1258e+00-+7.1365e-01+0.18938;
     // 对于新的工装
-    BaseVisionZ -= (77.51 - 12.81);
+    BaseVisionZ -= (77.51 - 12.81)/1000;
     float BaseVisionX = 0.15995;
     // 对于新的工装
-    BaseVisionX -= (82.4 - 65.17);
+    BaseVisionX -= (82.4 - 65.17)/1000;
     float BaseVisionY = 0.0;
     float BaseVisionPitchDeg = 27.5;
     Eigen::Matrix<float,4,4> Base_T_Vision, Vision_T_Tar, World_T_Base, World_T_Tar;
@@ -172,10 +172,18 @@ std::pair<size_t, size_t> Word2Pixel(Eigen::Vector3f & p)
 //   Eigen::Vector3f point_vision = (World_T_Tar.inverse()*p_I).head(3);
   Eigen::Vector3f point_vision = p;
   // // 相机坐标系转换为像素坐标系
-  const double kFx = 460.2265625;
-  const double kFy = 460.25;
-  const double kCx = 325.44140625;
-  const double kCy = 236.3984375;
+
+//   const double kFx = 460.2265625;
+//   const double kFy = 460.25;
+//   const double kCx = 325.44140625;
+//   const double kCy = 236.3984375;
+// K: [456.67578125, 0.0, 310.76171875, 0.0, 457.3671875, 246.896484375, 0.0, 0.0, 1.0]
+
+    const double kFx = 456.67578125;
+  const double kFy = 457.3671875;
+  const double kCx = 310.76171875;
+  const double kCy = 246.896484375;
+
   // 像素
   size_t j = point_vision.x() * kFx/point_vision.z() + kCx;
   size_t i = point_vision.y() * kFy/point_vision.z() + kCy;
@@ -208,7 +216,7 @@ void draw_rect(/* vector<Eigen::Vector3f> rectPoints */)
     //add all points of the contour to the vector
     for (auto & iter_pixel : pixels)
     {
-        // std::cout<<iter_pixel.first<<" "<<iter_pixel.second<<std::endl;
+        std::cout<<iter_pixel.first<<" "<<iter_pixel.second<<std::endl;
         // fillContSingle.push_back(cv::Point(iter_pixel.first, iter_pixel.second));
         fillContSingle.push_back(cv::Point(iter_pixel.second, iter_pixel.first));
     }
@@ -282,6 +290,7 @@ void draw_steps(vector<footstep>& steps)
         //fill the single contour 
         //(one could add multiple other similar contours to the vector)
         fillContAll.push_back(fillContSingle);
+        // std::cout<<"at draw steps: "<<draw_image.cols<<" "<<draw_image.rows<<std::endl;
         cv::polylines(draw_image, fillContAll, true, cv::Scalar(colors_.at(6), colors_.at(7), colors_.at(8)), 5);
         // Eigen::Vector3f center_w(iter_step.x, iter_step.y, iter_step.z);
         Eigen::Vector4f center_txt(iter_step.x, iter_step.y, iter_step.z, 1);
@@ -364,6 +373,7 @@ void draw_info(vector<footstep>& steps, Eigen::Vector3f & start, Eigen::Vector3f
 
 void draw(vector<footstep>& steps)
 {
+    // std::cout<<"draw image cols: "<<draw_image.cols<<" rows: "<<draw_image.rows<<std::endl;
     Eigen::Matrix4f MARKER_T_INITWORLD;
     unique_lock<mutex> g(m, std::defer_lock);
     g.lock();
@@ -374,7 +384,7 @@ void draw(vector<footstep>& steps)
     initROBOTWORLD_T_CAMERA = MARKER_T_INITWORLD.inverse() * MARKER_T_CAMERA;
     // draw_test();
     draw_steps(steps);
-    draw_rect();
+    // draw_rect();
 }
 
 void communicate_PC104()
@@ -500,7 +510,7 @@ void communicate_PC104()
             // double goal_dis = dis_walk;
 
             Eigen::Vector2f direct2d = (AW_IN_RW.block<3,3>(0,0) * Eigen::Vector3f::UnitX()).head(2).normalized();
-            Eigen::Vector2f goal2d = AW_IN_RW.block<2,1>(0, 3) - direct2d *(0.18 + 0.01) ;// 0.18 前脚掌余量，验证台阶与终点距离 偏置修改需额外在0.18基础上修正 0.01 ensure not touch the step
+            Eigen::Vector2f goal2d = AW_IN_RW.block<2,1>(0, 3) - direct2d *(0.16 + 0.04) ;// 0.16 前脚掌余量，验证台阶与终点距离 偏置修改需额外在0.18基础上修正 0.01 ensure not touch the step
             double yaw = std::acos(std::abs(direct2d.dot(Eigen::Vector2f::UnitX())));
             if (direct2d(0) > 0)
             {
@@ -1114,7 +1124,9 @@ void getColorImage(const sensor_msgs::Image::ConstPtr& msg)
             if (pub_step_index < pub_steps.size())
             {
                 std::cout<<"show index: "<<pub_step_index<<std::endl;
-                vector<footstep> pub_steps_now(pub_steps.begin() + pub_step_index, pub_step_index + 4 >pub_steps.size() ? pub_steps.end() : pub_steps.begin() + pub_step_index + 4);
+                // 由于最后对不上，所以最后四步不显示
+                vector<footstep> pub_steps_now(pub_steps.begin() + pub_step_index, pub_step_index + 4 >pub_steps.size() - 4 ? pub_steps.end() - 4 : pub_steps.begin() + pub_step_index + 4);
+                std::cout<<"foot steps size is "<<pub_steps_now.size()<<std::endl;
                 pub_step_index++;
                 if (pub_steps_now.empty())
                 {
@@ -1126,10 +1138,12 @@ void getColorImage(const sensor_msgs::Image::ConstPtr& msg)
                 }
                 else
                 {
+                    unique_lock<mutex> g(m_ros, std::defer_lock);
+                    g.lock();
                     cv::resize(image, draw_image, cv::Size(640, 480), 0, 0, cv::INTER_LINEAR);
+                    g.unlock();
                     // cv::imshow("draw_image", draw_image);
                     // cv::waitKey(0);
-                    // draw_image = image;
                     draw(pub_steps_now);
                     // cv::imshow("draw_image", draw_image);
                     // cv::waitKey(0);
@@ -1168,7 +1182,6 @@ void getColorImage(const sensor_msgs::Image::ConstPtr& msg)
     }
     // cv::imshow("pub_image", pub_image);
     // cv::waitKey(0);
-
     // 奇怪，放在这里怎么不行
     // sensor_msgs::ImagePtr pub_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", pub_image).toImageMsg();
     // pub_msg->header.frame_id = "pub_camera";
